@@ -24,7 +24,11 @@ def _check_duplicate_cols(df):
     cols = [c.lower() for c in df.columns]
     dups = [x for x in cols if cols.count(x) > 1]
     if dups:
-        raise errors.DuplicateColumns(f"There are duplicate column names. Repeated names are: {dups}. SQL Server dialect requires unique names (case insensitive).")
+        raise errors.DuplicateColumns(
+            ("There are duplicate column names. \n"
+             f"Repeated names are: {dups}. \n"
+             "SQL Server dialect requires unique names (case insensitive).")
+        )
 
 def _clean_col_name(column):
     """Removes special characters from column names
@@ -84,14 +88,15 @@ def _clean_table_name(table_name, temp):
 def _check_exists(cur, schema, table, temp):
     """Check in conn if table exists
     """
-    if temp:
-        return cur.execute(
-            f"IF OBJECT_ID('tempdb..[{table}]') IS NOT NULL select 1 else select 0"
-        ).fetchall()[0][0]
-    else:
-        return cur.execute(
-            f"IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{table}' and TABLE_SCHEMA = '{schema}') select 1 else select 0"
-        ).fetchall()[0][0]
+    check_exists_if_temp = (
+        f"IF OBJECT_ID('tempdb..[{table}]') IS NOT NULL \n"
+        "select 1 else select 0") if temp else (
+        "IF EXISTS \n(\n"
+        "\tSELECT * \n"
+        "\tFROM INFORMATION_SCHEMA.TABLES \n"
+        f"\tWHERE TABLE_NAME = '{table}' and TABLE_SCHEMA = '{schema}' \n"
+        ")\nselect 1 else select 0")
+    return cur.execute(check_exists_if_temp).fetchall()[0][0]
 
 def _generate_create_statement(schema, table, cols, temp):
     """Generates a create statement
@@ -104,7 +109,8 @@ def _check_parameter_if_exists(if_exists):
     """Raises an error if parameter 'if_exists' is not correct
     """
     if if_exists not in ('append', 'fail', 'replace'):
-        raise errors.WrongParam(f"Incorrect parameter value {if_exists} for 'if_exists'. Can be 'append', 'fail', or 'replace'")
+        raise errors.WrongParam(f"Incorrect parameter value {if_exists} for 'if_exists'. \n"
+                                "Can be 'append', 'fail', or 'replace'")
         
 def fast_to_sql(df, name, conn, if_exists='append', custom=None, temp=False, copy=False):
     """Main fast_to_sql function.
@@ -147,14 +153,14 @@ def fast_to_sql(df, name, conn, if_exists='append', custom=None, temp=False, cop
     if exists:
         _check_parameter_if_exists(if_exists)
         if if_exists == "replace":
-            if temp:
-                cur.execute(f"drop table [{name}]")
-            else:
-                cur.execute(f"drop table [{schema}].[{name}]")
+            drop_if_temp = f"drop table [{name}]" if temp else f"drop table [{schema}].[{name}]"
+            cur.execute(drop_if_temp)
             create_statement = _generate_create_statement(schema, name, data_types, temp)
             cur.execute(create_statement)
         elif if_exists == "fail":
-            fail_msg = f"Temp table [{name}] already exists in this connection" if temp else f"Table [{schema}].[{name}] already exists" 
+            fail_msg = (
+                f"Temp table [{name}] already exists in this connection") if temp else (
+                f"Table [{schema}].[{name}] already exists")
             raise errors.FailError(fail_msg)
     else:
         create_statement = _generate_create_statement(schema, name, data_types, temp)
